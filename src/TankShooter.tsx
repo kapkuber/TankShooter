@@ -1,16 +1,9 @@
 import { useEffect, useRef } from "react";
 import type { Vec2 as EntVec2, GameEntity } from "./game/entities";
 import {
-  SQUARE_SIZE,
-  TRIANGLE_SIZE,
   SQUARE_MAX_COUNT,
   TRIANGLE_MAX_COUNT,
-  computeEntityCollisionRadius,
-  triangleWorldVerts,
-  circleIntersectsTriangle,
-  ENTITY_COLLISION_INSET,
   HIT_FLASH_DURATION,
-  ENTITY_BOUNCE,
   resolveEntityEntityCollisions,
   spawnEntityRandomAvoidingPlayers as entsSpawnRandom,
   spawnEntityNearAvoidingPlayers as entsSpawnNear,
@@ -24,7 +17,6 @@ import type { Bullet } from "./game/tank";
 import {
   TANK_RADIUS,
   TANK_MAX_HP,
-  BULLET_RADIUS,
   BULLET_COOLDOWN,
   spawnBullet as tankSpawnBullet,
   drawTank as tankDraw,
@@ -32,6 +24,16 @@ import {
   drawTankDamageFlash as tankDrawHit,
   integrateTank,
 } from "./game/tank";
+import {
+  GRID_SIZE,
+  MAP_HEIGHT,
+  MAP_WIDTH,
+  SPAWN_SAFE_RADIUS,
+  MAX_SPAWNS_PER_FRAME,
+  type CameraInfo,
+} from "./game/config";
+import { createGridPatterns, drawGrid, type GridPatterns } from "./game/grid";
+import { updateBullets, renderBullets } from "./game/bulletSystem";
 
 /**
  * Suggested repo setup (outside this file):
@@ -43,17 +45,6 @@ import {
 type Vec2 = EntVec2;
 
 type SquareEntity = GameEntity;
-
-// Config (tweak freely)
-const GRID_SIZE = 25; // px per grid cell
-const GRID_BG_COLOR = "#cccccc"; // grid background (inside map)
-const GRID_LINE_COLOR = "#c4c4c4"; // grid lines (inside map)
-const OUTSIDE_BG_COLOR = "#b7b7b7"; // grid background (outside map)
-const OUTSIDE_LINE_COLOR = "#adadad"; // grid lines (outside map)
-const MAP_WIDTH = 1500;
-const MAP_HEIGHT = 1500;
-// Spawn system controls
-const SPAWN_SAFE_RADIUS = 20 * GRID_SIZE; // no-spawn radius around player
 
 export default function TankShooter() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -68,10 +59,8 @@ export default function TankShooter() {
   const mouseRef = useRef<Vec2>({ x: 0, y: 0 });
   const mouseDownRef = useRef<boolean>(false);
   const cooldownRemainingRef = useRef<number>(0);
-  const insideGridPatternRef = useRef<CanvasPattern | null>(null);
-  const outsideGridPatternRef = useRef<CanvasPattern | null>(null);
+  const gridPatternsRef = useRef<GridPatterns>({ inside: null, outside: null });
   const spawnsThisFrameRef = useRef<number>(0);
-  const MAX_SPAWNS_PER_FRAME = 2;
   const entitiesRef = useRef<SquareEntity[]>([]);
   const nextEntityIdRef = useRef<number>(1);
 
@@ -112,28 +101,7 @@ export default function TankShooter() {
       canvas.width = Math.floor(w * dpr);
       canvas.height = Math.floor(h * dpr);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0); // scale drawing ops to CSS pixels
-      // world position unchanged on resize
-
-      // Build grid pattern tiles (CSS pixel space)
-      function makeGridPattern(bg: string, line: string): CanvasPattern | null {
-        const tile = document.createElement('canvas');
-        tile.width = GRID_SIZE;
-        tile.height = GRID_SIZE;
-        const tctx = tile.getContext('2d')!;
-        tctx.fillStyle = bg;
-        tctx.fillRect(0, 0, tile.width, tile.height);
-        tctx.strokeStyle = line;
-        tctx.lineWidth = 1;
-        tctx.beginPath();
-        tctx.moveTo(0.5, 0);
-        tctx.lineTo(0.5, tile.height);
-        tctx.moveTo(0, 0.5);
-        tctx.lineTo(tile.width, 0.5);
-        tctx.stroke();
-        return tctx.createPattern(tile, 'repeat');
-      }
-      insideGridPatternRef.current = makeGridPattern(GRID_BG_COLOR, GRID_LINE_COLOR);
-      outsideGridPatternRef.current = makeGridPattern(OUTSIDE_BG_COLOR, OUTSIDE_LINE_COLOR);
+      gridPatternsRef.current = createGridPatterns();
     }
 
     resize();
@@ -198,169 +166,23 @@ export default function TankShooter() {
     const canvas = canvasRef.current!;
     const ctx = canvas.getContext("2d")!;
 
-    function drawGrid() {
-      const w = canvas.width / (window.devicePixelRatio || 1);
-      const h = canvas.height / (window.devicePixelRatio || 1);
-      ctx.clearRect(0, 0, w, h);
+    const getCamera = (): CameraInfo => {
+      const dpr = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
+      const width = canvas.width / dpr;
+      const height = canvas.height / dpr;
+      return {
+        x: tankPosRef.current.x - width / 2,
+        y: tankPosRef.current.y - height / 2,
+        width,
+        height,
+        devicePixelRatio: dpr,
+      };
+    };
 
-      // camera offset (world -> screen)
-      const camX = tankPosRef.current.x - w / 2;
-      const camY = tankPosRef.current.y - h / 2;
-
-      // Outside pattern fill
-      const outside = outsideGridPatternRef.current;
-      if (outside) {
-        ctx.save();
-        ctx.translate(- (camX % GRID_SIZE), - (camY % GRID_SIZE));
-        ctx.fillStyle = outside;
-        ctx.fillRect(-GRID_SIZE, -GRID_SIZE, w + GRID_SIZE * 2, h + GRID_SIZE * 2);
-        ctx.restore();
-      } else {
-        ctx.fillStyle = OUTSIDE_BG_COLOR;
-        ctx.fillRect(0, 0, w, h);
-      }
-
-      // Inside map rect
-      const mapL = -camX;
-      const mapT = -camY;
-      const mapR = MAP_WIDTH - camX;
-      const mapB = MAP_HEIGHT - camY;
-      const insideL = Math.max(0, mapL);
-      const insideT = Math.max(0, mapT);
-      const insideR = Math.min(w, mapR);
-      const insideB = Math.min(h, mapB);
-      const hasInside = insideR > insideL && insideB > insideT;
-      const inside = insideGridPatternRef.current;
-      if (inside && hasInside) {
-        ctx.save();
-        ctx.beginPath();
-        ctx.rect(insideL, insideT, insideR - insideL, insideB - insideT);
-        ctx.clip();
-        ctx.translate(- (camX % GRID_SIZE), - (camY % GRID_SIZE));
-        ctx.fillStyle = inside;
-        ctx.fillRect(-GRID_SIZE, -GRID_SIZE, w + GRID_SIZE * 2, h + GRID_SIZE * 2);
-        ctx.restore();
-      } else if (hasInside) {
-        ctx.fillStyle = GRID_BG_COLOR;
-        ctx.fillRect(insideL, insideT, insideR - insideL, insideB - insideT);
-      }
-    }
-
-    function drawTank() {
-      const w = canvas.width / (window.devicePixelRatio || 1);
-      const h = canvas.height / (window.devicePixelRatio || 1);
-      const m = mouseRef.current;
-      tankDraw(ctx, w, h, m);
-    }
-
-    // Tank health is drawn below the tank like entities; invisible at full HP
-
-    function drawBullets(dt: number) {
-      // update
-      bulletsRef.current.forEach(b => {
-        b.pos.x += b.vel.x * dt;
-        b.pos.y += b.vel.y * dt;
-        b.life -= dt;
-      });
-      // bullet vs entity collisions (broad-phase spatial hash)
-      if (entitiesRef.current.length && bulletsRef.current.length) {
-        const CELL = Math.max(SQUARE_SIZE, TRIANGLE_SIZE, BULLET_RADIUS * 2);
-        // use numeric keys to avoid string concat overhead
-        const bins = new Map<number, SquareEntity[]>();
-        const key = (cx: number, cy: number) => ((cx << 16) ^ (cy & 0xffff)) | 0;
-
-        // bin entities
-        for (const e of entitiesRef.current) {
-          const cx = Math.floor(e.pos.x / CELL);
-          const cy = Math.floor(e.pos.y / CELL);
-          const k = key(cx, cy);
-          let arr = bins.get(k);
-          if (!arr) { arr = []; bins.set(k, arr); }
-          arr.push(e);
-        }
-
-        const removed = new Set<number>();
-
-        // for each bullet, scan only 3x3 neighboring cells; exit early on hit
-        bulletLoop:
-        for (const b of bulletsRef.current) {
-          if (b.life <= 0) continue;
-          const cx = Math.floor(b.pos.x / CELL);
-          const cy = Math.floor(b.pos.y / CELL);
-          for (let dx = -1; dx <= 1; dx++) {
-            for (let dy = -1; dy <= 1; dy++) {
-              const arr = bins.get(key(cx + dx, cy + dy));
-              if (!arr) continue;
-              for (const e of arr) {
-                if (removed.has(e.id)) continue;
-                if (e.kind === 'triangle') {
-                  // Triangle collision: polygon with inset constant
-                  const insetSize = Math.max(1, e.size - 2 * ENTITY_COLLISION_INSET);
-                  const [v0, v1, v2] = triangleWorldVerts(e.pos, e.angle, insetSize);
-                  if (circleIntersectsTriangle({ x: b.pos.x, y: b.pos.y }, b.radius, v0, v1, v2)) {
-                    (e as any).hp = Math.max(0, (e as any).hp - 7);
-                    (e as any).hitT = HIT_FLASH_DURATION;
-                    // bounce entity away from bullet
-                    const dxh = e.pos.x - b.pos.x;
-                    const dyh = e.pos.y - b.pos.y;
-                    const len = Math.hypot(dxh, dyh) || 1;
-                    (e as any).kick.x += (dxh / len) * ENTITY_BOUNCE;
-                    (e as any).kick.y += (dyh / len) * ENTITY_BOUNCE;
-                    b.life = 0;
-                    if ((e as any).hp <= 0) { entsQueueDeathFx(e as any); removed.add(e.id); }
-                    continue bulletLoop;
-                  }
-                } else {
-                  // Square: keep circular approx with inset
-                  const dxp = b.pos.x - e.pos.x;
-                  const dyp = b.pos.y - e.pos.y;
-                  const r = b.radius + computeEntityCollisionRadius(e.size);
-                  if (dxp * dxp + dyp * dyp <= r * r) {
-                    (e as any).hp = Math.max(0, (e as any).hp - 7);
-                    (e as any).hitT = HIT_FLASH_DURATION;
-                    // bounce entity away from bullet
-                    const len = Math.hypot(dxp, dyp) || 1;
-                    (e as any).kick.x -= (dxp / len) * ENTITY_BOUNCE;
-                    (e as any).kick.y -= (dyp / len) * ENTITY_BOUNCE;
-                    b.life = 0;
-                    if ((e as any).hp <= 0) { entsQueueDeathFx(e as any); removed.add(e.id); }
-                    continue bulletLoop;
-                  }
-                }
-              }
-            }
-          }
-        }
-        if (removed.size) {
-          const toRespawn = entitiesRef.current.filter(e => removed.has(e.id)).length;
-          entitiesRef.current = entitiesRef.current.filter(e => !removed.has(e.id));
-          let spawned = 0;
-          while (spawned < toRespawn && spawned < MAX_SPAWNS_PER_FRAME) { if (entsSpawnRandom(entitiesRef.current as any, nextEntityIdRef as any, tankPosRef.current, MAP_WIDTH, MAP_HEIGHT, SPAWN_SAFE_RADIUS, 'square')) { spawned++; spawnsThisFrameRef.current++; } else break; }
-        }
-      }
-      // cull relative to camera/view
-      const w = canvas.width / (window.devicePixelRatio || 1);
-      const h = canvas.height / (window.devicePixelRatio || 1);
-      const camX = tankPosRef.current.x - w / 2;
-      const camY = tankPosRef.current.y - h / 2;
-      bulletsRef.current = bulletsRef.current.filter(b => {
-        if (b.life <= 0) return false;
-        const sx = b.pos.x - camX;
-        const sy = b.pos.y - camY;
-        return sx > -40 && sx < w + 40 && sy > -40 && sy < h + 40;
-      });
-
-      // draw
-      ctx.fillStyle = "#00b2e1";
-      for (const b of bulletsRef.current) {
-        ctx.beginPath();
-        ctx.arc(b.pos.x - camX, b.pos.y - camY, b.radius, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.strokeStyle = "#0085a8"; // bullet outline
-        ctx.lineWidth = 2.7;
-        ctx.stroke();
-      }
-    }
+    const renderTank = (camera: CameraInfo) => {
+      const mouse = mouseRef.current;
+      tankDraw(ctx, camera.width, camera.height, mouse);
+    };
 
     function frame(ts: number) {
       const last = lastTsRef.current;
@@ -389,9 +211,8 @@ export default function TankShooter() {
         cooldownRemainingRef.current = BULLET_COOLDOWN;
       }
 
-      drawGrid();
-      const w = canvas.width / (window.devicePixelRatio || 1);
-      const h = canvas.height / (window.devicePixelRatio || 1);
+      const camera = getCamera();
+      drawGrid(ctx, camera, gridPatternsRef.current);
       // Entities update/draw via module
       const maybeSpawnNear = (x: number, y: number, kind: 'square'|'triangle') => {
         const countSquares = entitiesRef.current.filter(e => e.kind === 'square').length;
@@ -414,13 +235,29 @@ export default function TankShooter() {
       entsUpdate(dt, entitiesRef.current as any, tankPosRef.current, tankVelRef.current, MAP_WIDTH, MAP_HEIGHT, TANK_RADIUS, maybeSpawnNear, onPlayerCollide);
       resolveEntityEntityCollisions(entitiesRef.current as any);
       entsDeathUpdate(dt);
-      entsDraw(ctx, w, h, tankPosRef.current.x - w/2, tankPosRef.current.y - h/2, entitiesRef.current as any);
-      entsDeathDraw(ctx, w, h, tankPosRef.current.x - w/2, tankPosRef.current.y - h/2);
-      drawBullets(dt);
-      drawTank();
-      tankDrawHp(ctx, w, h, tankHpRef.current, TANK_MAX_HP);
+      entsDraw(ctx, camera.width, camera.height, camera.x, camera.y, entitiesRef.current as any);
+      entsDeathDraw(ctx, camera.width, camera.height, camera.x, camera.y);
+
+      const bulletResult = updateBullets({
+        bullets: bulletsRef.current,
+        entities: entitiesRef.current as any,
+        dt,
+        camera,
+        spawnsThisFrame: spawnsThisFrameRef.current,
+        maxSpawnsPerFrame: MAX_SPAWNS_PER_FRAME,
+        spawnSquare: (list) => entsSpawnRandom(list as any, nextEntityIdRef as any, tankPosRef.current, MAP_WIDTH, MAP_HEIGHT, SPAWN_SAFE_RADIUS, 'square'),
+        queueDeathEffect: entsQueueDeathFx,
+      });
+
+      bulletsRef.current = bulletResult.bullets;
+      entitiesRef.current = bulletResult.entities as any;
+      spawnsThisFrameRef.current = bulletResult.spawnsThisFrame;
+
+      renderBullets(ctx, bulletsRef.current, camera);
+      renderTank(camera);
+      tankDrawHp(ctx, camera.width, camera.height, tankHpRef.current, TANK_MAX_HP);
       // red tank flash overlay
-      tankDrawHit(ctx, w, h, tankHitTRef.current);
+      tankDrawHit(ctx, camera.width, camera.height, tankHitTRef.current);
       // screen flash removed per request; only tank flash remains
       requestAnimationFrame(frame);
     }

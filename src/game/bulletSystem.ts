@@ -1,0 +1,172 @@
+import type { Bullet } from "./tank";
+import type { GameEntity } from "./entities";
+import {
+  SQUARE_SIZE,
+  TRIANGLE_SIZE,
+  computeEntityCollisionRadius,
+  triangleWorldVerts,
+  circleIntersectsTriangle,
+  ENTITY_COLLISION_INSET,
+  HIT_FLASH_DURATION,
+  ENTITY_BOUNCE,
+} from "./entities";
+import { BULLET_RADIUS } from "./tank";
+import type { CameraInfo } from "./config";
+
+const BULLET_FILL = "#00b2e1";
+const BULLET_STROKE = "#0085a8";
+const BULLET_OUTLINE_WIDTH = 2.7;
+
+export interface BulletUpdateParams {
+  bullets: Bullet[];
+  entities: GameEntity[];
+  dt: number;
+  camera: CameraInfo;
+  spawnsThisFrame: number;
+  maxSpawnsPerFrame: number;
+  spawnSquare: (entities: GameEntity[]) => boolean;
+  queueDeathEffect: (entity: GameEntity) => void;
+}
+
+export interface BulletUpdateResult {
+  bullets: Bullet[];
+  entities: GameEntity[];
+  spawnsThisFrame: number;
+}
+
+export function updateBullets({
+  bullets,
+  entities,
+  dt,
+  camera,
+  spawnsThisFrame,
+  maxSpawnsPerFrame,
+  spawnSquare,
+  queueDeathEffect,
+}: BulletUpdateParams): BulletUpdateResult {
+  bullets.forEach((b) => {
+    b.pos.x += b.vel.x * dt;
+    b.pos.y += b.vel.y * dt;
+    b.life -= dt;
+  });
+
+  if (entities.length && bullets.length) {
+    const cellSize = Math.max(SQUARE_SIZE, TRIANGLE_SIZE, BULLET_RADIUS * 2);
+    const bins = new Map<number, GameEntity[]>();
+    const key = (cx: number, cy: number) => ((cx << 16) ^ (cy & 0xffff)) | 0;
+
+    for (const entity of entities) {
+      const cx = Math.floor(entity.pos.x / cellSize);
+      const cy = Math.floor(entity.pos.y / cellSize);
+      const k = key(cx, cy);
+      let bucket = bins.get(k);
+      if (!bucket) {
+        bucket = [];
+        bins.set(k, bucket);
+      }
+      bucket.push(entity);
+    }
+
+    const removed = new Set<number>();
+
+    bulletLoop: for (const bullet of bullets) {
+      if (bullet.life <= 0) continue;
+      const cx = Math.floor(bullet.pos.x / cellSize);
+      const cy = Math.floor(bullet.pos.y / cellSize);
+      for (let dx = -1; dx <= 1; dx++) {
+        for (let dy = -1; dy <= 1; dy++) {
+          const bucket = bins.get(key(cx + dx, cy + dy));
+          if (!bucket) continue;
+          for (const entity of bucket) {
+            if (removed.has(entity.id)) continue;
+            if (entity.kind === "triangle") {
+              const insetSize = Math.max(1, entity.size - 2 * ENTITY_COLLISION_INSET);
+              const [v0, v1, v2] = triangleWorldVerts(entity.pos, entity.angle, insetSize);
+              if (circleIntersectsTriangle({ x: bullet.pos.x, y: bullet.pos.y }, bullet.radius, v0, v1, v2)) {
+                (entity as any).hp = Math.max(0, (entity as any).hp - 7);
+                (entity as any).hitT = HIT_FLASH_DURATION;
+                const dxh = entity.pos.x - bullet.pos.x;
+                const dyh = entity.pos.y - bullet.pos.y;
+                const len = Math.hypot(dxh, dyh) || 1;
+                (entity as any).kick.x += (dxh / len) * ENTITY_BOUNCE;
+                (entity as any).kick.y += (dyh / len) * ENTITY_BOUNCE;
+                bullet.life = 0;
+                if ((entity as any).hp <= 0) {
+                  queueDeathEffect(entity);
+                  removed.add(entity.id);
+                }
+                continue bulletLoop;
+              }
+            } else {
+              const dxp = bullet.pos.x - entity.pos.x;
+              const dyp = bullet.pos.y - entity.pos.y;
+              const radius = bullet.radius + computeEntityCollisionRadius(entity.size);
+              if (dxp * dxp + dyp * dyp <= radius * radius) {
+                (entity as any).hp = Math.max(0, (entity as any).hp - 7);
+                (entity as any).hitT = HIT_FLASH_DURATION;
+                const len = Math.hypot(dxp, dyp) || 1;
+                (entity as any).kick.x -= (dxp / len) * ENTITY_BOUNCE;
+                (entity as any).kick.y -= (dyp / len) * ENTITY_BOUNCE;
+                bullet.life = 0;
+                if ((entity as any).hp <= 0) {
+                  queueDeathEffect(entity);
+                  removed.add(entity.id);
+                }
+                continue bulletLoop;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    if (removed.size) {
+      const originalCount = entities.length;
+      entities = entities.filter((entity) => !removed.has(entity.id));
+      const toRespawn = originalCount - entities.length;
+      let spawned = 0;
+      while (spawned < toRespawn && spawned < maxSpawnsPerFrame) {
+        if (spawnSquare(entities)) {
+          spawned++;
+          spawnsThisFrame++;
+        } else {
+          break;
+        }
+      }
+    }
+  }
+
+  const { x: camX, y: camY, width, height } = camera;
+  const nextBullets: Bullet[] = [];
+  for (const bullet of bullets) {
+    if (bullet.life <= 0) continue;
+    const sx = bullet.pos.x - camX;
+    const sy = bullet.pos.y - camY;
+    if (sx > -40 && sx < width + 40 && sy > -40 && sy < height + 40) {
+      nextBullets.push(bullet);
+    }
+  }
+
+  return {
+    bullets: nextBullets,
+    entities,
+    spawnsThisFrame,
+  };
+}
+
+export function renderBullets(
+  ctx: CanvasRenderingContext2D,
+  bullets: Bullet[],
+  camera: CameraInfo,
+): void {
+  const { x: camX, y: camY } = camera;
+  ctx.fillStyle = BULLET_FILL;
+  ctx.strokeStyle = BULLET_STROKE;
+  ctx.lineWidth = BULLET_OUTLINE_WIDTH;
+  for (const bullet of bullets) {
+    ctx.beginPath();
+    ctx.arc(bullet.pos.x - camX, bullet.pos.y - camY, bullet.radius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  }
+}
