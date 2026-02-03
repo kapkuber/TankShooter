@@ -218,6 +218,16 @@ export default function TankShooter() {
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (e.repeat) return;
+      if (e.key.toLowerCase() === 'm') {
+        const current = playerProgressRef.current;
+        if (current.level < MAX_LEVEL) {
+          const nextLevel = current.level + 1;
+          const nextProgress = { level: nextLevel, xp: 0 };
+          playerProgressRef.current = nextProgress;
+          setPlayerProgress(nextProgress);
+        }
+        return;
+      }
       const idx = Number.parseInt(e.key, 10);
       if (!Number.isFinite(idx) || idx < 1 || idx > STAT_ORDER.length) return;
       const key = STAT_ORDER[idx - 1];
@@ -314,6 +324,8 @@ export default function TankShooter() {
       };
       let tookDamage = false;
       const killedByBody = new Set<number>();
+      let bodyRemovedSquares = 0;
+      let bodyRemovedTriangles = 0;
       const onPlayerCollide = (entity: GameEntity, overlapDt: number) => {
         tankHpRef.current = Math.max(0, tankHpRef.current - PLAYER_CONTACT_DPS * overlapDt);
         tankHitTRef.current = HIT_FLASH_DURATION;
@@ -329,6 +341,8 @@ export default function TankShooter() {
           entsQueueDeathFx(entity);
           pendingXpRef.current += xpForKill(entity.kind, entity.maxHp);
           pendingScoreRef.current += scoreForKill(entity.kind, entity.maxHp);
+          if (entity.kind === "triangle") bodyRemovedTriangles += 1;
+          else bodyRemovedSquares += 1;
         }
       };
       entsUpdate(
@@ -345,9 +359,8 @@ export default function TankShooter() {
       if (killedByBody.size) {
         const originalCount = entitiesRef.current.length;
         entitiesRef.current = entitiesRef.current.filter((entity) => !killedByBody.has(entity.id));
-        const removedCount = originalCount - entitiesRef.current.length;
         let spawned = 0;
-        while (spawned < removedCount && spawnsThisFrameRef.current < MAX_SPAWNS_PER_FRAME) {
+        while (bodyRemovedSquares > 0 && spawnsThisFrameRef.current < MAX_SPAWNS_PER_FRAME) {
           if (entsSpawnRandom(
             entitiesRef.current as any,
             nextEntityIdRef as any,
@@ -359,6 +372,24 @@ export default function TankShooter() {
           )) {
             spawned++;
             spawnsThisFrameRef.current++;
+            bodyRemovedSquares -= 1;
+          } else {
+            break;
+          }
+        }
+        while (bodyRemovedTriangles > 0 && spawnsThisFrameRef.current < MAX_SPAWNS_PER_FRAME) {
+          if (entsSpawnRandom(
+            entitiesRef.current as any,
+            nextEntityIdRef as any,
+            tankPosRef.current,
+            MAP_WIDTH,
+            MAP_HEIGHT,
+            SPAWN_SAFE_RADIUS,
+            'triangle',
+          )) {
+            spawned++;
+            spawnsThisFrameRef.current++;
+            bodyRemovedTriangles -= 1;
           } else {
             break;
           }
@@ -377,6 +408,7 @@ export default function TankShooter() {
         spawnsThisFrame: spawnsThisFrameRef.current,
         maxSpawnsPerFrame: MAX_SPAWNS_PER_FRAME,
         spawnSquare: (list) => entsSpawnRandom(list as any, nextEntityIdRef as any, tankPosRef.current, MAP_WIDTH, MAP_HEIGHT, SPAWN_SAFE_RADIUS, 'square'),
+        spawnTriangle: (list) => entsSpawnRandom(list as any, nextEntityIdRef as any, tankPosRef.current, MAP_WIDTH, MAP_HEIGHT, SPAWN_SAFE_RADIUS, 'triangle'),
         queueDeathEffect: entsQueueDeathFx,
         onEntityKilled: (entity) => {
           pendingXpRef.current += xpForKill(entity.kind, entity.maxHp);
@@ -439,11 +471,16 @@ export default function TankShooter() {
       <canvas ref={canvasRef} style={{ display: "block" }} />
       <div className="fixed top-3 left-3 text-xs bg-white/80 rounded-md px-2 py-1 shadow">Left click to shoot - Move mouse to aim</div>
       <div id="hud-score-level" data-hud="score-level" className="hud-score-level">
-        <div className="hud-pill">
+        <div className="hud-pill hud-pill-score">
+          <div className="hud-pill-fill score" />
           <span className="hud-dot score" />
           <span className="hud-text">Score: {score}</span>
         </div>
-        <div className="hud-pill">
+        <div className="hud-pill hud-pill-level">
+          <div
+            className="hud-pill-fill level"
+            style={{ width: `${Math.min(100, (playerProgress.xp / Math.max(1, xpForNextLevel(playerProgress.level))) * 100)}%` }}
+          />
           <span className="hud-dot level" />
           <span className="hud-text">Lvl {playerProgress.level} Tank</span>
         </div>

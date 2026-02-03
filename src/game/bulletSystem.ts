@@ -26,6 +26,7 @@ export interface BulletUpdateParams {
   spawnsThisFrame: number;
   maxSpawnsPerFrame: number;
   spawnSquare: (entities: GameEntity[]) => boolean;
+  spawnTriangle: (entities: GameEntity[]) => boolean;
   queueDeathEffect: (entity: GameEntity) => void;
   onEntityKilled?: (entity: GameEntity) => void;
 }
@@ -44,6 +45,7 @@ export function updateBullets({
   spawnsThisFrame,
   maxSpawnsPerFrame,
   spawnSquare,
+  spawnTriangle,
   queueDeathEffect,
   onEntityKilled,
 }: BulletUpdateParams): BulletUpdateResult {
@@ -75,6 +77,8 @@ export function updateBullets({
     }
 
     const removed = new Set<number>();
+    let removedSquares = 0;
+    let removedTriangles = 0;
 
     bulletLoop: for (const bullet of bullets) {
       if (bullet.life <= 0) continue;
@@ -104,6 +108,7 @@ export function updateBullets({
                 if ((entity as any).hp <= 0) {
                   queueDeathEffect(entity);
                   removed.add(entity.id);
+                  removedTriangles += 1;
                   if (onEntityKilled) onEntityKilled(entity);
                 }
                 continue bulletLoop;
@@ -125,6 +130,7 @@ export function updateBullets({
                 if ((entity as any).hp <= 0) {
                   queueDeathEffect(entity);
                   removed.add(entity.id);
+                  removedSquares += 1;
                   if (onEntityKilled) onEntityKilled(entity);
                 }
                 continue bulletLoop;
@@ -138,11 +144,20 @@ export function updateBullets({
     if (removed.size) {
       const originalCount = entities.length;
       entities = entities.filter((entity) => !removed.has(entity.id));
-      const toRespawn = originalCount - entities.length;
       let spawned = 0;
-      while (spawned < toRespawn && spawned < maxSpawnsPerFrame) {
+      while (removedSquares > 0 && spawned < maxSpawnsPerFrame) {
         if (spawnSquare(entities)) {
-          spawned++;
+          removedSquares -= 1;
+          spawned += 1;
+          spawnsThisFrame++;
+        } else {
+          break;
+        }
+      }
+      while (removedTriangles > 0 && spawned < maxSpawnsPerFrame) {
+        if (spawnTriangle(entities)) {
+          removedTriangles -= 1;
+          spawned += 1;
           spawnsThisFrame++;
         } else {
           break;

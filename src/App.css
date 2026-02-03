@@ -57,10 +57,12 @@
   border-radius: 9999px;
   padding: 0px 5px;
   text-align: center;
-  border: 1px solid rgba(0, 0, 0, 0.35);
+  border: 1.5px solid rgba(0, 0, 0, 0.35);
   display: flex;
   align-items: center;
   gap: 10px;
+  position: relative;
+  overflow: hidden;
 }
 
 #root .hud-score-level .hud-pill + .hud-pill {
@@ -68,25 +70,29 @@
   background: rgba(31, 31, 31, 0.85);
 }
 
-#root .hud-dot {
-  display: inline-block;
-  width: 12px;
-  height: 12px;
+#root .hud-score-level .hud-pill-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 0%;
   border-radius: 9999px;
-  border: 1px solid rgba(0, 0, 0, 0.4);
-  flex: 0 0 auto;
+  opacity: 0.75;
 }
 
-#root .hud-dot.score {
+#root .hud-score-level .hud-pill-fill.score {
+  width: 100%;
   background: #5cf2a6;
 }
 
-#root .hud-dot.level {
+#root .hud-score-level .hud-pill-fill.level {
   background: #f3dd6a;
 }
 
 #root .hud-score-level .hud-text {
   flex: 1;
+  position: relative;
+  z-index: 1;
 }
 
 #root .hud-stats {
