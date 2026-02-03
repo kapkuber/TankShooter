@@ -266,7 +266,7 @@ export function updateEntities(
   mapH: number,
   tankRadius: number,
   maybeSpawnNear: (x: number, y: number, kind: EntityKind) => void,
-  onPlayerCollide?: (damage: number) => void,
+  onPlayerCollide?: (entity: GameEntity, dt: number) => void,
 ): void {
   for (const e of entities) {
     // integrate
@@ -312,7 +312,7 @@ export function updateEntities(
       e.kick.x -= nx * ENTITY_BOUNCE;
       e.kick.y -= ny * ENTITY_BOUNCE;
       // report contact damage to player (purely via callback)
-      if (onPlayerCollide) onPlayerCollide(PLAYER_CONTACT_DPS * dt);
+      if (onPlayerCollide) onPlayerCollide(e, dt);
     }
 
     // reproduction chance (defer per-kind cap check to caller via maybeSpawnNear)

@@ -40,3 +40,122 @@
 .read-the-docs {
   color: #888;
 }
+#root .hud-score-level {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  z-index: 9999;
+  pointer-events: none;
+  color: #ffffff;
+  font-size: 14px;
+  width: 360px;
+}
+
+#root .hud-score-level .hud-pill {
+  background: rgba(47, 47, 47, 0.92);
+  border-radius: 9999px;
+  padding: 0px 5px;
+  text-align: center;
+  border: 1px solid rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+#root .hud-score-level .hud-pill + .hud-pill {
+  margin-top: 8px;
+  background: rgba(31, 31, 31, 0.85);
+}
+
+#root .hud-dot {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 9999px;
+  border: 1px solid rgba(0, 0, 0, 0.4);
+  flex: 0 0 auto;
+}
+
+#root .hud-dot.score {
+  background: #5cf2a6;
+}
+
+#root .hud-dot.level {
+  background: #f3dd6a;
+}
+
+#root .hud-score-level .hud-text {
+  flex: 1;
+}
+
+#root .hud-stats {
+  position: fixed;
+  left: 24px;
+  bottom: 24px;
+  z-index: 9999;
+  pointer-events: none;
+  color: #ffffff;
+  font-size: 11px;
+  width: 240px;
+}
+
+#root .hud-stats .hud-stats-wrap {
+  background: rgba(43, 43, 43, 0.9);
+  border-radius: 16px;
+  padding: 10px 12px;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(0, 0, 0, 0.4);
+}
+
+#root .hud-stats .hud-stats-header {
+  display: flex;
+  justify-content: space-between;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 10px;
+  margin-bottom: 8px;
+}
+
+#root .hud-stats .hud-stat-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+#root .hud-stats .hud-stat-row:last-child {
+  margin-bottom: 0;
+}
+
+#root .hud-stats .hud-bar {
+  position: relative;
+  flex: 1;
+  height: 20px;
+  background: #3a3a3a;
+  border-radius: 9999px;
+  overflow: hidden;
+  border: 1px solid rgba(0, 0, 0, 0.4);
+}
+
+#root .hud-stats .hud-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.25));
+  border-radius: 9999px;
+}
+
+#root .hud-stats .hud-bar-label {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+#root .hud-stats .hud-stat-value {
+  width: 48px;
+  text-align: right;
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.9);
+}

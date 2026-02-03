@@ -12,6 +12,7 @@ import {
 } from "./entities";
 import { BULLET_RADIUS } from "./tank";
 import type { CameraInfo } from "./config";
+import { SHAPE_BASE_DAMAGE, computeBulletHitDamage } from "./stats";
 
 const BULLET_FILL = "#00b2e1";
 const BULLET_STROKE = "#0085a8";
@@ -26,6 +27,7 @@ export interface BulletUpdateParams {
   maxSpawnsPerFrame: number;
   spawnSquare: (entities: GameEntity[]) => boolean;
   queueDeathEffect: (entity: GameEntity) => void;
+  onEntityKilled?: (entity: GameEntity) => void;
 }
 
 export interface BulletUpdateResult {
@@ -43,6 +45,7 @@ export function updateBullets({
   maxSpawnsPerFrame,
   spawnSquare,
   queueDeathEffect,
+  onEntityKilled,
 }: BulletUpdateParams): BulletUpdateResult {
   bullets.forEach((b) => {
     b.pos.x += b.vel.x * dt;
@@ -51,7 +54,11 @@ export function updateBullets({
   });
 
   if (entities.length && bullets.length) {
-    const cellSize = Math.max(SQUARE_SIZE, TRIANGLE_SIZE, BULLET_RADIUS * 2);
+    let maxBulletRadius = BULLET_RADIUS;
+    for (const bullet of bullets) {
+      if (bullet.radius > maxBulletRadius) maxBulletRadius = bullet.radius;
+    }
+    const cellSize = Math.max(SQUARE_SIZE, TRIANGLE_SIZE, maxBulletRadius * 2);
     const bins = new Map<number, GameEntity[]>();
     const key = (cx: number, cy: number) => ((cx << 16) ^ (cy & 0xffff)) | 0;
 
@@ -83,17 +90,21 @@ export function updateBullets({
               const insetSize = Math.max(1, entity.size - 2 * ENTITY_COLLISION_INSET);
               const [v0, v1, v2] = triangleWorldVerts(entity.pos, entity.angle, insetSize);
               if (circleIntersectsTriangle({ x: bullet.pos.x, y: bullet.pos.y }, bullet.radius, v0, v1, v2)) {
-                (entity as any).hp = Math.max(0, (entity as any).hp - 7);
+                const baseDamage = SHAPE_BASE_DAMAGE.triangle;
+                const actualDamage = computeBulletHitDamage(bullet.damage, bullet.hp, baseDamage);
+                (entity as any).hp = Math.max(0, (entity as any).hp - actualDamage);
                 (entity as any).hitT = HIT_FLASH_DURATION;
                 const dxh = entity.pos.x - bullet.pos.x;
                 const dyh = entity.pos.y - bullet.pos.y;
                 const len = Math.hypot(dxh, dyh) || 1;
                 (entity as any).kick.x += (dxh / len) * ENTITY_BOUNCE;
                 (entity as any).kick.y += (dyh / len) * ENTITY_BOUNCE;
-                bullet.life = 0;
+                bullet.hp -= baseDamage;
+                if (bullet.hp <= 0) bullet.life = 0;
                 if ((entity as any).hp <= 0) {
                   queueDeathEffect(entity);
                   removed.add(entity.id);
+                  if (onEntityKilled) onEntityKilled(entity);
                 }
                 continue bulletLoop;
               }
@@ -102,15 +113,19 @@ export function updateBullets({
               const dyp = bullet.pos.y - entity.pos.y;
               const radius = bullet.radius + computeEntityCollisionRadius(entity.size);
               if (dxp * dxp + dyp * dyp <= radius * radius) {
-                (entity as any).hp = Math.max(0, (entity as any).hp - 7);
+                const baseDamage = SHAPE_BASE_DAMAGE.square;
+                const actualDamage = computeBulletHitDamage(bullet.damage, bullet.hp, baseDamage);
+                (entity as any).hp = Math.max(0, (entity as any).hp - actualDamage);
                 (entity as any).hitT = HIT_FLASH_DURATION;
                 const len = Math.hypot(dxp, dyp) || 1;
                 (entity as any).kick.x -= (dxp / len) * ENTITY_BOUNCE;
                 (entity as any).kick.y -= (dyp / len) * ENTITY_BOUNCE;
-                bullet.life = 0;
+                bullet.hp -= baseDamage;
+                if (bullet.hp <= 0) bullet.life = 0;
                 if ((entity as any).hp <= 0) {
                   queueDeathEffect(entity);
                   removed.add(entity.id);
+                  if (onEntityKilled) onEntityKilled(entity);
                 }
                 continue bulletLoop;
               }

@@ -8,6 +8,9 @@ export interface Bullet {
   vel: Vec2;
   radius: number;
   life: number;
+  hp: number;
+  maxHp: number;
+  damage: number;
 }
 
 export const TANK_RADIUS = 24;
@@ -27,6 +30,14 @@ export const TANK_SPEED = 280; // px/s (max)
 export const TANK_ACCEL = 600; // px/s^2
 export const TANK_FRICTION = 2; // 1/s
 
+export interface BulletSpawnStats {
+  speed: number;
+  damage: number;
+  hp: number;
+  lifetime: number;
+  radius: number;
+}
+
 export function spawnBullet(
   bullets: Bullet[],
   nextIdRef: { current: number },
@@ -35,6 +46,13 @@ export function spawnBullet(
   mouse: Vec2,
   viewW: number,
   viewH: number,
+  stats: BulletSpawnStats = {
+    speed: BULLET_SPEED,
+    damage: 7,
+    hp: 2,
+    lifetime: BULLET_LIFETIME,
+    radius: BULLET_RADIUS,
+  },
 ) {
   const baseAngle = Math.atan2(mouse.y - viewH / 2, mouse.x - viewW / 2);
   const spreadRad = (BULLET_SPREAD_DEG * Math.PI) / 180;
@@ -48,25 +66,37 @@ export function spawnBullet(
   bullets.push({
     id: nextIdRef.current++,
     pos: spawn,
-    vel: { x: dir.x * BULLET_SPEED, y: dir.y * BULLET_SPEED },
-    radius: BULLET_RADIUS,
-    life: BULLET_LIFETIME,
+    vel: { x: dir.x * stats.speed, y: dir.y * stats.speed },
+    radius: stats.radius,
+    life: stats.lifetime,
+    hp: stats.hp,
+    maxHp: stats.hp,
+    damage: stats.damage,
   });
   tankVel.x -= dir.x * RECOIL_IMPULSE;
   tankVel.y -= dir.y * RECOIL_IMPULSE;
 }
 
-export function drawTank(ctx: CanvasRenderingContext2D, viewW: number, viewH: number, mouse: Vec2) {
+export function drawTank(
+  ctx: CanvasRenderingContext2D,
+  viewW: number,
+  viewH: number,
+  mouse: Vec2,
+  sizeMultiplier: number = 1,
+) {
   const angle = Math.atan2(mouse.y - viewH / 2, mouse.x - viewW / 2);
+  const radius = TANK_RADIUS * sizeMultiplier;
+  const barrelLength = BARREL_LENGTH * sizeMultiplier;
+  const barrelWidth = BARREL_WIDTH * sizeMultiplier;
   ctx.save();
   ctx.translate(viewW / 2, viewH / 2);
   ctx.rotate(angle);
   ctx.fillStyle = "#999999"; // barrel color
   ctx.strokeStyle = "#727272"; // barrel outline
   ctx.lineWidth = 3.5;
-  const x = TANK_RADIUS - 6;
+  const x = radius - 6 * sizeMultiplier;
   ctx.beginPath();
-  ctx.rect(x, -BARREL_WIDTH / 2, BARREL_LENGTH, BARREL_WIDTH);
+  ctx.rect(x, -barrelWidth / 2, barrelLength, barrelWidth);
   ctx.fill();
   ctx.stroke();
   ctx.restore();
@@ -75,7 +105,7 @@ export function drawTank(ctx: CanvasRenderingContext2D, viewW: number, viewH: nu
   ctx.strokeStyle = "#0085a8";
   ctx.lineWidth = 3.5;
   ctx.beginPath();
-  ctx.arc(viewW / 2, viewH / 2, TANK_RADIUS, 0, Math.PI * 2);
+  ctx.arc(viewW / 2, viewH / 2, radius, 0, Math.PI * 2);
   ctx.fill();
   ctx.stroke();
 }
@@ -86,28 +116,29 @@ export function drawTankHealthBar(
   viewH: number,
   hp: number,
   maxHp: number = TANK_MAX_HP,
+  tankRadius: number = TANK_RADIUS,
 ) {
   const clampedHp = Math.max(0, Math.min(maxHp, hp));
   if (clampedHp >= maxHp) return; // invisible until damaged
 
   const ratio = clampedHp / maxHp;
   // mirror entity bar styling and placement (below the tank)
-  const s = TANK_RADIUS * 2; // approximate size like entity 's'
+  const s = tankRadius * 2; // approximate size like entity 's'
   const barW = Math.max(18, s * 1.1);
   const barH = 7;
-  const radius = barH / 2;
+  const barRadius = barH / 2;
   const bx = viewW / 2 - barW / 2;
-  const by = viewH / 2 + TANK_RADIUS + 11;
+  const by = viewH / 2 + tankRadius + 11;
 
   // track
   ctx.save();
   ctx.fillStyle = '#555555';
   ctx.beginPath();
-  ctx.moveTo(bx + radius, by);
-  ctx.lineTo(bx + barW - radius, by);
-  ctx.arc(bx + barW - radius, by + radius, radius, -Math.PI / 2, Math.PI / 2);
-  ctx.lineTo(bx + radius, by + barH);
-  ctx.arc(bx + radius, by + radius, radius, Math.PI / 2, -Math.PI / 2);
+  ctx.moveTo(bx + barRadius, by);
+  ctx.lineTo(bx + barW - barRadius, by);
+  ctx.arc(bx + barW - barRadius, by + barRadius, barRadius, -Math.PI / 2, Math.PI / 2);
+  ctx.lineTo(bx + barRadius, by + barH);
+  ctx.arc(bx + barRadius, by + barRadius, barRadius, Math.PI / 2, -Math.PI / 2);
   ctx.closePath();
   ctx.fill();
 
@@ -136,6 +167,7 @@ export function drawTankDamageFlash(
   viewW: number,
   viewH: number,
   hitT: number,
+  radius: number = TANK_RADIUS,
 ) {
   if (!hitT || hitT <= 0) return;
   const t = Math.max(0, Math.min(HIT_FLASH_DURATION, hitT));
@@ -149,7 +181,7 @@ export function drawTankDamageFlash(
   ctx.strokeStyle = HIT_STROKE;
   ctx.lineWidth = 3.5;
   ctx.beginPath();
-  ctx.arc(0, 0, TANK_RADIUS, 0, Math.PI * 2);
+  ctx.arc(0, 0, radius, 0, Math.PI * 2);
   ctx.fill();
   ctx.stroke();
   ctx.restore();
@@ -172,6 +204,7 @@ export function integrateTank(
   mapW: number,
   mapH: number,
   margin: number,
+  maxSpeed: number = TANK_SPEED,
 ) {
   let ix = inputX;
   let iy = inputY;
@@ -184,8 +217,8 @@ export function integrateTank(
   const damp = Math.max(0, 1 - TANK_FRICTION * dt);
   vel.x *= damp; vel.y *= damp;
   const sp = Math.hypot(vel.x, vel.y);
-  if (sp > TANK_SPEED) {
-    const s = TANK_SPEED / sp; vel.x *= s; vel.y *= s;
+  if (sp > maxSpeed) {
+    const s = maxSpeed / sp; vel.x *= s; vel.y *= s;
   }
   const nextX = pos.x + vel.x * dt;
   const nextY = pos.y + vel.y * dt;
