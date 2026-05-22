@@ -5,7 +5,17 @@
       "Bash(curl -sS -o /dev/null -w 'GET / -> %{http_code}\\\\n' http://localhost:5174/)",
       "Bash(curl -sS -o /dev/null -w 'GET /hud.css -> %{http_code}\\\\n' http://localhost:5174/hud.css)",
       "Bash(curl -sS -o /dev/null -w 'GET /hud.ts -> %{http_code}\\\\n' http://localhost:5174/hud.ts)",
-      "Bash(npx tsc *)"
+      "Bash(npx tsc *)",
+      "WebSearch",
+      "WebFetch(domain:diepio.fandom.com)",
+      "WebFetch(domain:sites.google.com)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:woomyarrasio.fandom.com)",
+      "Bash(gh api *)",
+      "Read(//tmp/**)"
+    ],
+    "additionalDirectories": [
+      "\\tmp"
     ]
   }
 }
