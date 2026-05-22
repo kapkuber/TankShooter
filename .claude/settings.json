@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run *)",
+      "Bash(curl -sS -o /dev/null -w 'GET / -> %{http_code}\\\\n' http://localhost:5174/)",
+      "Bash(curl -sS -o /dev/null -w 'GET /hud.css -> %{http_code}\\\\n' http://localhost:5174/hud.css)",
+      "Bash(curl -sS -o /dev/null -w 'GET /hud.ts -> %{http_code}\\\\n' http://localhost:5174/hud.ts)",
+      "Bash(npx tsc *)"
+    ]
+  }
+}
