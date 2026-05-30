@@ -24,3 +24,4 @@ They match in FFA, differ in team modes.
 React state is for HUD only. Game entities live in `useRef` arrays. Mutations live in named system functions (`resolveCoreEntityCollisions`, `updateBullets`, etc.) — never inside render code. This keeps the data shape ready to be replaced by server snapshots without a rendering rewrite.
 
 Polygons (square/triangle/pentagon) are neutral world resources — they do NOT get `teamId`.
+Future buildings that fire bullets just need attributable: false on their spawn.
