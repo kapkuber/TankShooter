@@ -12,7 +12,9 @@
       "WebFetch(domain:github.com)",
       "WebFetch(domain:woomyarrasio.fandom.com)",
       "Bash(gh api *)",
-      "Read(//tmp/**)"
+      "Read(//tmp/**)",
+      "Bash(Get-ChildItem -Path \"c:\\\\Users\\\\Kuber Kapuriya\\\\OneDrive\\\\Desktop\\\\ziebio\" -Recurse -Include \"*.ts\", \"*.tsx\", \"*.js\", \"*.jsx\")",
+      "Bash(Select-Object -ExpandProperty FullName)"
     ],
     "additionalDirectories": [
       "\\tmp"
